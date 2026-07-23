@@ -8,10 +8,19 @@ Rebuilt from a Python/pygame prototype ([source](https://github.com/coding-arnav
 
 ## How it works
 
-1. **Fly** — drag anywhere on the play field to move your ship.
-2. **Fire** — tap the Fire button to shoot enemies falling from the top.
+1. **Fly** — drag anywhere, or use arrow keys / WASD, to move your ship.
+2. **Fire** — tap the Fire button or press Space/X to shoot enemies falling from the top.
 3. **Dodge** — random enemy bullets fall too; each hit costs you a point of health. Health hits 0 → run over.
 4. **Submit** — if your run beats your personal best, submit it on-chain to the `ShooterScore` leaderboard (gas only, no fee).
+
+### Every fire and move is an on-chain transaction
+
+Optionally, every shot fired and every discrete move gesture can be logged as its own transaction via `logAction(uint8)` — a cheap, storage-free event emitted on `ShooterScore`. Since no wallet can prompt per-shot, this uses a **session key**: a burner wallet generated and stored in the browser (`src/lib/sessionKey.ts`) that auto-signs those transactions once you fund it with a small amount of test CELO from your real wallet (the "Session key" card on the menu, `SessionKeyCard.tsx`).
+
+- Movement is continuous, so only *discrete* move gestures are logged (a drag start, or a fresh arrow-key press), throttled to at most one every 250ms — not every animation frame.
+- Transactions are fire-and-forget: gameplay never waits on a block to confirm, since Celo's ~5s block time is far slower than the game's input rate. The session key tracks its own nonce locally to send sequential transactions without waiting for confirmations.
+- This is genuinely gas-per-action, continuously, for as long as you play — **testnet only**. Never fund the session key with real (mainnet) value; it's a plaintext key in localStorage by design, disposable and low-value.
+- If the session key isn't funded (or the contract isn't deployed), the game plays exactly the same — action logging just silently no-ops.
 
 ---
 
@@ -52,7 +61,7 @@ Open **http://localhost:3000**. The game is playable without a wallet — connec
 
 ## Smart contract
 
-`ShooterScore.sol` ([`src/contracts/ShooterScore.sol`](src/contracts/ShooterScore.sol)) is a minimal, fee-free leaderboard: `submitScore(uint256)` records a run if it beats the caller's previous best, and keeps a sorted top-10 (`getLeaderboard()`). The frontend ABI in [`src/contracts/abi.ts`](src/contracts/abi.ts) mirrors it.
+`ShooterScore.sol` ([`src/contracts/ShooterScore.sol`](src/contracts/ShooterScore.sol)) is a minimal, fee-free leaderboard: `submitScore(uint256)` records a run if it beats the caller's previous best, and keeps a sorted top-10 (`getLeaderboard()`). It also exposes `logAction(uint8 actionType)`, a storage-free event emitter (`ActionLogged`) used for the per-action on-chain logging described above — cheap enough (~15k gas) to call at high frequency. The frontend ABI in [`src/contracts/abi.ts`](src/contracts/abi.ts) mirrors both.
 
 ### Build & test (Foundry)
 
@@ -94,9 +103,9 @@ Set the same variable in your Vercel project settings for production. Until it's
 src/
 ├── app/                  # Next.js App Router (layout, page, globals.css)
 ├── components/
-│   └── game/             # ShooterGame (canvas engine), Menu/GameOver/Leaderboard screens
-├── hooks/                # useMiniPay (wallet), useShooterScore (contract reads/writes)
-├── lib/                  # wagmi config, providers, address formatting
+│   └── game/             # ShooterGame (canvas engine), Menu/GameOver/Leaderboard, SessionKeyCard
+├── hooks/                # useMiniPay (wallet), useShooterScore, useSessionKey (burner wallet)
+├── lib/                  # wagmi config, providers, address formatting, sfx, sessionKey
 ├── contracts/            # ShooterScore.sol + generated ABI
 └── types/                # shared TypeScript types
 contracts/                # Foundry project (foundry.toml, tests, vendored forge-std)

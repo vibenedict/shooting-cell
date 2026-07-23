@@ -3,6 +3,7 @@
 import { useMiniPay } from '@/hooks/useMiniPay'
 import { truncateAddress } from '@/lib/format'
 import SpaceBackground from './SpaceBackground'
+import SessionKeyCard from './SessionKeyCard'
 
 interface Props {
   onPlay: () => void
@@ -66,6 +67,8 @@ export default function MenuScreen({ onPlay, onLeaderboard }: Props) {
           </button>
         )}
       </div>
+
+      <SessionKeyCard />
     </div>
   )
 }

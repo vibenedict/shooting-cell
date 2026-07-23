@@ -25,6 +25,7 @@ contract ShooterScore {
     Entry[MAX_ENTRIES] private leaderboard;
 
     event ScoreSubmitted(address indexed player, uint256 score);
+    event ActionLogged(address indexed player, uint8 actionType, uint256 timestamp);
 
     error NotNewBest();
 
@@ -34,6 +35,15 @@ contract ShooterScore {
         bestScore[msg.sender] = score;
         _insertLeaderboard(msg.sender, score);
         emit ScoreSubmitted(msg.sender, score);
+    }
+
+    /// @notice Log a single gameplay action as a cheap, storage-free event.
+    /// @dev    Called at high frequency (every fire/move) by a session key, so
+    ///         it deliberately writes no state — an event is the cheapest
+    ///         possible on-chain footprint for high-volume logging.
+    /// @param actionType 0 = fire, 1 = move
+    function logAction(uint8 actionType) external {
+        emit ActionLogged(msg.sender, actionType, block.timestamp);
     }
 
     /// @notice Returns the current top-10 leaderboard, sorted descending.

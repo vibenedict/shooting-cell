@@ -37,6 +37,13 @@ export const SHOOTER_SCORE_ABI = [
     inputs: [{ name: 'score', type: 'uint256' }],
     outputs: [],
   },
+  {
+    name: 'logAction',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'actionType', type: 'uint8' }],
+    outputs: [],
+  },
   // Events
   {
     name: 'ScoreSubmitted',
@@ -44,6 +51,15 @@ export const SHOOTER_SCORE_ABI = [
     inputs: [
       { name: 'player', type: 'address', indexed: true },
       { name: 'score', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    name: 'ActionLogged',
+    type: 'event',
+    inputs: [
+      { name: 'player', type: 'address', indexed: true },
+      { name: 'actionType', type: 'uint8', indexed: false },
+      { name: 'timestamp', type: 'uint256', indexed: false },
     ],
   },
 ] as const

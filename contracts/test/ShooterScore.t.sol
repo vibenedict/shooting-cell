@@ -10,6 +10,9 @@ contract ShooterScoreTest is Test {
     address alice = address(0xA11CE);
     address bob = address(0xB0B);
 
+    // Re-declared to match ShooterScore.ActionLogged for vm.expectEmit comparison.
+    event ActionLogged(address indexed player, uint8 actionType, uint256 timestamp);
+
     function setUp() public {
         game = new ShooterScore();
     }
@@ -62,6 +65,20 @@ contract ShooterScoreTest is Test {
         assertEq(lb[0].score, 40);
         assertEq(lb[1].player, bob);
         assertEq(lb[1].score, 30);
+    }
+
+    function testLogActionEmitsEvent() public {
+        vm.expectEmit(true, false, false, true);
+        emit ActionLogged(alice, 0, block.timestamp);
+        vm.prank(alice);
+        game.logAction(0);
+    }
+
+    function testLogActionDoesNotWriteState() public {
+        vm.prank(alice);
+        game.logAction(1);
+        // No score/leaderboard side effects from a pure action log
+        assertEq(game.bestScore(alice), 0);
     }
 
     function testLeaderboardCapsAtTenEntries() public {

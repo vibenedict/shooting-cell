@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { playFire, playBlast, playHit } from '@/lib/sfx'
+import { useSessionKey } from '@/hooks/useSessionKey'
+
+const MOVE_LOG_COOLDOWN_MS = 250 // min gap between on-chain "move" action logs
 
 const PLAYER_SIZE = 34
 const KEY_MOVE_SPEED = 300 // px/sec, keyboard movement
@@ -115,10 +118,30 @@ export default function ShooterGame({ onGameOver }: Props) {
   const overRef = useRef(false)
   const wantsFireRef = useRef(false)
   const keysRef = useRef<Set<string>>(new Set())
+  const lastMoveLogRef = useRef(0)
 
   const [score, setScore] = useState(0)
   const [health, setHealth] = useState(START_HEALTH)
   const [showHint, setShowHint] = useState(false)
+
+  // Every fire/move becomes its own on-chain transaction, signed by a local
+  // session key so gameplay never blocks on a wallet popup or block time.
+  // The game loop below is a ref-captured rAF closure that never re-runs, so
+  // we mirror `logAction` into a ref to avoid calling a stale, funding-unaware
+  // closure of it.
+  const { logAction, txCount, isFunded } = useSessionKey()
+  const logActionRef = useRef(logAction)
+  useEffect(() => {
+    logActionRef.current = logAction
+  }, [logAction])
+
+  const logMoveThrottled = useCallback(() => {
+    const now = performance.now()
+    if (now - lastMoveLogRef.current > MOVE_LOG_COOLDOWN_MS) {
+      lastMoveLogRef.current = now
+      logActionRef.current(1)
+    }
+  }, [])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -188,8 +211,10 @@ export default function ShooterGame({ onGameOver }: Props) {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (moveKeys.has(e.key) || e.key === ' ') e.preventDefault()
+      const wasHeld = keysRef.current.has(e.key)
       keysRef.current.add(e.key)
       if (e.key === ' ' || e.key === 'x' || e.key === 'X') fire()
+      else if (moveKeys.has(e.key) && !wasHeld) logMoveThrottled()
     }
     const handleKeyUp = (e: KeyboardEvent) => {
       keysRef.current.delete(e.key)
@@ -201,7 +226,7 @@ export default function ShooterGame({ onGameOver }: Props) {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
     }
-  }, [fire])
+  }, [fire, logMoveThrottled])
 
   const spawnBurst = (x: number, y: number, count: number, colors: string[], speed = 140) => {
     for (let i = 0; i < count; i++) {
@@ -286,6 +311,7 @@ export default function ShooterGame({ onGameOver }: Props) {
           })
           muzzleFlashRef.current = MUZZLE_FLASH_DURATION
           playFire()
+          logActionRef.current(0)
         }
         wantsFireRef.current = false
 
@@ -767,6 +793,11 @@ export default function ShooterGame({ onGameOver }: Props) {
             {score}
           </span>
         </span>
+        {isFunded && (
+          <span className="font-mono text-[10px] uppercase tracking-wide text-cs-text3">
+            {txCount} on-chain tx{txCount === 1 ? '' : 's'}
+          </span>
+        )}
         <div
           className={`flex gap-[3px] ${lowHealth ? 'animate-cs-danger-pulse' : ''}`}
           aria-label={`${health} health remaining`}
@@ -795,6 +826,7 @@ export default function ShooterGame({ onGameOver }: Props) {
         onPointerDown={(e) => {
           draggingRef.current = true
           handlePointerMove(e.clientX, e.clientY)
+          logMoveThrottled()
           if (showHint) dismissHint()
         }}
         onPointerMove={(e) => {
