@@ -4,6 +4,7 @@ import { useAccount } from 'wagmi'
 import { useLeaderboard } from '@/hooks/useShooterScore'
 import { truncateAddress } from '@/lib/format'
 import { SHOOTER_SCORE_ADDRESS } from '@/contracts/abi'
+import SpaceBackground from './SpaceBackground'
 
 interface Props {
   onBack: () => void
@@ -22,7 +23,7 @@ export default function LeaderboardScreen({ onBack }: Props) {
 
   return (
     <div className="relative flex h-full flex-col gap-4 overflow-hidden px-4 py-6 animate-cs-in">
-      <div className="cs-starfield pointer-events-none absolute inset-0 opacity-40" />
+      <SpaceBackground opacity={0.7} />
 
       <div className="relative flex items-center justify-between">
         <h2 className="font-display text-xl font-bold uppercase tracking-tight text-cs-text1">

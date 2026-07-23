@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useMiniPay } from '@/hooks/useMiniPay'
 import { useBestScore, useSubmitScore } from '@/hooks/useShooterScore'
 import { SHOOTER_SCORE_ADDRESS } from '@/contracts/abi'
+import SpaceBackground from './SpaceBackground'
 
 interface Props {
   score: number
@@ -26,7 +27,7 @@ export default function GameOverScreen({ score, onPlayAgain, onLeaderboard }: Pr
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-6 overflow-hidden px-6 text-center animate-cs-in">
-      <div className="cs-starfield pointer-events-none absolute inset-0 opacity-50" />
+      <SpaceBackground />
 
       <div className="relative">
         <p className="text-xs uppercase tracking-widest text-cs-text3">Run over</p>

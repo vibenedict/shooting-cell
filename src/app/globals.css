@@ -66,24 +66,4 @@
     border: 1px solid var(--cs-border-strong);
     color: var(--cs-text1);
   }
-
-  /* Ambient drifting starfield for chrome screens (menu / game over / leaderboard) */
-  .cs-starfield {
-    background-image:
-      radial-gradient(1.5px 1.5px at 10% 20%, rgba(234,240,232,.9), transparent 60%),
-      radial-gradient(1px 1px at 80% 10%, rgba(234,240,232,.7), transparent 60%),
-      radial-gradient(1.2px 1.2px at 60% 70%, rgba(234,240,232,.8), transparent 60%),
-      radial-gradient(1px 1px at 30% 85%, rgba(234,240,232,.6), transparent 60%),
-      radial-gradient(1.5px 1.5px at 90% 55%, rgba(234,240,232,.7), transparent 60%),
-      radial-gradient(1px 1px at 45% 40%, rgba(234,240,232,.5), transparent 60%),
-      radial-gradient(1px 1px at 25% 55%, rgba(234,240,232,.5), transparent 60%);
-    background-repeat: repeat;
-    background-size: 220px 220px;
-    animation: cs-drift 50s linear infinite;
-  }
-
-  @keyframes cs-drift {
-    from { background-position: 0 0; }
-    to { background-position: 0 -440px; }
-  }
 }

@@ -2,6 +2,7 @@
 
 import { useMiniPay } from '@/hooks/useMiniPay'
 import { truncateAddress } from '@/lib/format'
+import SpaceBackground from './SpaceBackground'
 
 interface Props {
   onPlay: () => void
@@ -13,7 +14,7 @@ export default function MenuScreen({ onPlay, onLeaderboard }: Props) {
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-8 overflow-hidden px-6 text-center animate-cs-in">
-      <div className="cs-starfield pointer-events-none absolute inset-0 opacity-70" />
+      <SpaceBackground />
       <div
         className="pointer-events-none absolute inset-0"
         style={{ background: 'radial-gradient(ellipse at 50% 45%, transparent 30%, #05060A 85%)' }}
