@@ -37,6 +37,13 @@ interface Vec {
 interface Enemy extends Vec {
   rot: number
   phase: number
+  kind: number // 0: diamond drone, 1: saucer, 2: bug, 3: crystal
+}
+
+interface EnemyBullet extends Vec {
+  kind: number // 0: bolt, 1: orb, 2: shard
+  rot: number
+  phase: number
 }
 
 interface Particle {
@@ -86,7 +93,7 @@ export default function ShooterGame({ onGameOver }: Props) {
   const playerRef = useRef<Vec>({ x: 180, y: 460 })
   const bulletsRef = useRef<Vec[]>([])
   const enemiesRef = useRef<Enemy[]>([])
-  const enemyBulletsRef = useRef<Vec[]>([])
+  const enemyBulletsRef = useRef<EnemyBullet[]>([])
   const particlesRef = useRef<Particle[]>([])
   const floatTextsRef = useRef<FloatText[]>([])
   const starsRef = useRef<Star[]>([])
@@ -308,6 +315,7 @@ export default function ShooterGame({ onGameOver }: Props) {
             y: -ENEMY_SIZE,
             rot: 0,
             phase: Math.random() * Math.PI * 2,
+            kind: Math.floor(Math.random() * 4),
           })
         }
 
@@ -321,6 +329,9 @@ export default function ShooterGame({ onGameOver }: Props) {
           enemyBulletsRef.current.push({
             x: Math.random() * (w - ENEMY_BULLET_W),
             y: -ENEMY_BULLET_H,
+            kind: Math.floor(Math.random() * 3),
+            rot: 0,
+            phase: Math.random() * Math.PI * 2,
           })
         }
 
@@ -340,6 +351,7 @@ export default function ShooterGame({ onGameOver }: Props) {
         // Update enemy bullets + player collision
         enemyBulletsRef.current = enemyBulletsRef.current.filter((eb) => {
           eb.y += ENEMY_BULLET_SPEED * dt
+          eb.rot += dt * 6
           if (eb.y > h) return false
 
           const p = playerRef.current
@@ -489,42 +501,156 @@ export default function ShooterGame({ onGameOver }: Props) {
         ctx.fillRect(b.x - bw / 2, b.y, bw, BULLET_H * 0.5)
       }
 
-      // Enemies — two-tone diamond with a breathing core, slow spin
+      // Enemies — 4 randomized, animated alien designs sharing one hitbox
       for (const e of enemiesRef.current) {
         const pulse = 1 + Math.sin(now / 180 + e.phase) * 0.08
         ctx.save()
         ctx.translate(e.x, e.y)
-        ctx.rotate(Math.sin(e.rot) * 0.25)
-        ctx.scale(pulse, pulse)
-        ctx.fillStyle = '#E8465F'
-        ctx.beginPath()
-        ctx.moveTo(0, -ENEMY_SIZE / 2)
-        ctx.lineTo(ENEMY_SIZE / 2, 0)
-        ctx.lineTo(0, ENEMY_SIZE / 2)
-        ctx.lineTo(-ENEMY_SIZE / 2, 0)
-        ctx.closePath()
-        ctx.fill()
-        ctx.fillStyle = '#F79CAB'
-        const inner = ENEMY_SIZE * 0.32
-        ctx.beginPath()
-        ctx.moveTo(0, -inner)
-        ctx.lineTo(inner, 0)
-        ctx.lineTo(0, inner)
-        ctx.lineTo(-inner, 0)
-        ctx.closePath()
-        ctx.fill()
+
+        if (e.kind === 0) {
+          // Diamond drone — two-tone diamond with a breathing core, slow wobble
+          ctx.rotate(Math.sin(e.rot) * 0.25)
+          ctx.scale(pulse, pulse)
+          ctx.fillStyle = '#E8465F'
+          ctx.beginPath()
+          ctx.moveTo(0, -ENEMY_SIZE / 2)
+          ctx.lineTo(ENEMY_SIZE / 2, 0)
+          ctx.lineTo(0, ENEMY_SIZE / 2)
+          ctx.lineTo(-ENEMY_SIZE / 2, 0)
+          ctx.closePath()
+          ctx.fill()
+          ctx.fillStyle = '#F79CAB'
+          const inner = ENEMY_SIZE * 0.32
+          ctx.beginPath()
+          ctx.moveTo(0, -inner)
+          ctx.lineTo(inner, 0)
+          ctx.lineTo(0, inner)
+          ctx.lineTo(-inner, 0)
+          ctx.closePath()
+          ctx.fill()
+        } else if (e.kind === 1) {
+          // Saucer — hovering disc with a dome and blinking under-lights
+          ctx.translate(0, Math.sin(now / 260 + e.phase) * 3)
+          ctx.scale(pulse, pulse)
+          ctx.fillStyle = '#B85FE0'
+          ctx.beginPath()
+          ctx.ellipse(0, 0, ENEMY_SIZE / 2, ENEMY_SIZE * 0.28, 0, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = '#E8C6FF'
+          ctx.beginPath()
+          ctx.ellipse(0, -ENEMY_SIZE * 0.16, ENEMY_SIZE * 0.28, ENEMY_SIZE * 0.22, 0, Math.PI, Math.PI * 2)
+          ctx.fill()
+          const lightColors = ['#F5C542', '#8FF0C0', '#E8465F']
+          for (let i = 0; i < 3; i++) {
+            const lx = (i - 1) * (ENEMY_SIZE * 0.28)
+            const on = Math.sin(now / 150 + e.phase + i * 2) > 0.3
+            ctx.fillStyle = on ? lightColors[i] : 'rgba(255,255,255,0.15)'
+            ctx.beginPath()
+            ctx.arc(lx, ENEMY_SIZE * 0.16, 2.5, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        } else if (e.kind === 2) {
+          // Bug — rounded body, flapping wings, blinking eye
+          const flap = Math.sin(now / 90 + e.phase) * 0.5
+          ctx.scale(pulse, pulse)
+          ctx.fillStyle = '#C4501E'
+          ctx.save()
+          ctx.rotate(flap)
+          ctx.beginPath()
+          ctx.moveTo(-4, 0)
+          ctx.lineTo(-ENEMY_SIZE / 2, -ENEMY_SIZE * 0.22)
+          ctx.lineTo(-ENEMY_SIZE / 2, ENEMY_SIZE * 0.22)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+          ctx.save()
+          ctx.rotate(-flap)
+          ctx.beginPath()
+          ctx.moveTo(4, 0)
+          ctx.lineTo(ENEMY_SIZE / 2, -ENEMY_SIZE * 0.22)
+          ctx.lineTo(ENEMY_SIZE / 2, ENEMY_SIZE * 0.22)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+          ctx.fillStyle = '#E87A3C'
+          ctx.beginPath()
+          ctx.ellipse(0, 0, ENEMY_SIZE * 0.28, ENEMY_SIZE * 0.34, 0, 0, Math.PI * 2)
+          ctx.fill()
+          const eyeOpen = Math.sin(now / 200 + e.phase) > -0.6
+          ctx.fillStyle = eyeOpen ? '#FFD9A8' : '#7A3B1C'
+          ctx.beginPath()
+          ctx.arc(0, -ENEMY_SIZE * 0.05, 4, 0, Math.PI * 2)
+          ctx.fill()
+        } else {
+          // Crystal — jagged shard, continuously rotating, glowing cracks
+          ctx.rotate(e.rot)
+          ctx.scale(pulse, pulse)
+          ctx.fillStyle = '#8A3B54'
+          ctx.beginPath()
+          ctx.moveTo(0, -ENEMY_SIZE / 2)
+          ctx.lineTo(ENEMY_SIZE * 0.38, -ENEMY_SIZE * 0.1)
+          ctx.lineTo(ENEMY_SIZE * 0.3, ENEMY_SIZE / 2)
+          ctx.lineTo(-ENEMY_SIZE * 0.22, ENEMY_SIZE * 0.4)
+          ctx.lineTo(-ENEMY_SIZE * 0.4, -ENEMY_SIZE * 0.05)
+          ctx.closePath()
+          ctx.fill()
+          ctx.strokeStyle = `rgba(255,143,199,${0.5 + Math.sin(now / 150 + e.phase) * 0.4})`
+          ctx.lineWidth = 1.5
+          ctx.beginPath()
+          ctx.moveTo(0, -ENEMY_SIZE * 0.3)
+          ctx.lineTo(ENEMY_SIZE * 0.1, 0)
+          ctx.lineTo(-ENEMY_SIZE * 0.05, ENEMY_SIZE * 0.25)
+          ctx.stroke()
+        }
+
         ctx.restore()
       }
 
-      // Enemy bullets + trail
+      // Enemy bullets — 3 randomized projectile types sharing one hitbox
       for (const eb of enemyBulletsRef.current) {
-        const trailGrad = ctx.createLinearGradient(eb.x, eb.y - 12, eb.x, eb.y)
-        trailGrad.addColorStop(0, 'rgba(245,197,66,0)')
-        trailGrad.addColorStop(1, 'rgba(245,197,66,0.85)')
-        ctx.fillStyle = trailGrad
-        ctx.fillRect(eb.x, eb.y - 12, ENEMY_BULLET_W, ENEMY_BULLET_H + 12)
-        ctx.fillStyle = '#FCE8A8'
-        ctx.fillRect(eb.x, eb.y, ENEMY_BULLET_W, ENEMY_BULLET_H * 0.4)
+        if (eb.kind === 0) {
+          // Bolt — flickering energy rectangle with a trailing glow
+          const flicker = 0.75 + Math.sin(now / 40 + eb.phase) * 0.25
+          const trailGrad = ctx.createLinearGradient(eb.x, eb.y - 12, eb.x, eb.y)
+          trailGrad.addColorStop(0, 'rgba(245,197,66,0)')
+          trailGrad.addColorStop(1, `rgba(245,197,66,${0.85 * flicker})`)
+          ctx.fillStyle = trailGrad
+          ctx.fillRect(eb.x, eb.y - 12, ENEMY_BULLET_W, ENEMY_BULLET_H + 12)
+          ctx.fillStyle = '#FCE8A8'
+          ctx.fillRect(eb.x, eb.y, ENEMY_BULLET_W, ENEMY_BULLET_H * 0.4)
+        } else if (eb.kind === 1) {
+          // Orb — pulsing plasma ball with a soft outer glow
+          const cx = eb.x + ENEMY_BULLET_W / 2
+          const cy = eb.y + ENEMY_BULLET_H / 2
+          const r = 5 + Math.sin(now / 90 + eb.phase) * 1.5
+          const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.8)
+          glow.addColorStop(0, 'rgba(232,70,95,0.9)')
+          glow.addColorStop(1, 'rgba(232,70,95,0)')
+          ctx.fillStyle = glow
+          ctx.beginPath()
+          ctx.arc(cx, cy, r * 1.8, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = '#FCD8DE'
+          ctx.beginPath()
+          ctx.arc(cx, cy, r * 0.5, 0, Math.PI * 2)
+          ctx.fill()
+        } else {
+          // Shard — spinning glowing sliver
+          const cx = eb.x + ENEMY_BULLET_W / 2
+          const cy = eb.y + ENEMY_BULLET_H / 2
+          ctx.save()
+          ctx.translate(cx, cy)
+          ctx.rotate(eb.rot)
+          ctx.fillStyle = '#C68FE0'
+          ctx.beginPath()
+          ctx.moveTo(0, -8)
+          ctx.lineTo(4, 2)
+          ctx.lineTo(0, 8)
+          ctx.lineTo(-4, 2)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+        }
       }
 
       // Player ship — layered triangle body + wings + gun barrels + cockpit +
