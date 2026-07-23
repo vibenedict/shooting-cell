@@ -17,11 +17,48 @@ const ENEMY_BULLET_SPEED = 320
 const ENEMY_BULLET_SPAWN_BASE_MS = 500
 const FIRE_COOLDOWN_MS = 180
 const START_HEALTH = 10
+const STAR_COUNT = 70
+const SHAKE_DURATION = 0.26
+const FLASH_DURATION = 0.16
+const HINT_SEEN_KEY = 'celo-shooter-hint-seen'
+
+const KILL_COLORS = ['#E8465F', '#F5825C', '#F5C542']
 
 interface Vec {
   x: number
   y: number
   hit?: boolean
+}
+
+interface Enemy extends Vec {
+  rot: number
+  phase: number
+}
+
+interface Particle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  maxLife: number
+  size: number
+  color: string
+}
+
+interface FloatText {
+  x: number
+  y: number
+  life: number
+  maxLife: number
+  text: string
+  color: string
+}
+
+interface Star {
+  x: number
+  y: number
+  z: number // 0..1 depth: bigger = closer/faster/brighter
 }
 
 interface Props {
@@ -35,8 +72,14 @@ export default function ShooterGame({ onGameOver }: Props) {
 
   const playerRef = useRef<Vec>({ x: 180, y: 460 })
   const bulletsRef = useRef<Vec[]>([])
-  const enemiesRef = useRef<Vec[]>([])
+  const enemiesRef = useRef<Enemy[]>([])
   const enemyBulletsRef = useRef<Vec[]>([])
+  const particlesRef = useRef<Particle[]>([])
+  const floatTextsRef = useRef<FloatText[]>([])
+  const starsRef = useRef<Star[]>([])
+  const shakeTimeRef = useRef(0)
+  const flashTimeRef = useRef(0)
+  const thrusterAccumRef = useRef(0)
   const lastFireRef = useRef(0)
   const lastEnemySpawnRef = useRef(0)
   const lastEnemyBulletSpawnRef = useRef(0)
@@ -50,6 +93,17 @@ export default function ShooterGame({ onGameOver }: Props) {
 
   const [score, setScore] = useState(0)
   const [health, setHealth] = useState(START_HEALTH)
+  const [showHint, setShowHint] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!window.localStorage.getItem(HINT_SEEN_KEY)) setShowHint(true)
+  }, [])
+
+  const dismissHint = useCallback(() => {
+    setShowHint(false)
+    window.localStorage.setItem(HINT_SEEN_KEY, '1')
+  }, [])
 
   // Fit canvas to its container, accounting for device pixel ratio.
   useEffect(() => {
@@ -71,6 +125,11 @@ export default function ShooterGame({ onGameOver }: Props) {
         x: rect.width / 2,
         y: rect.height - 90,
       }
+      starsRef.current = Array.from({ length: STAR_COUNT }, () => ({
+        x: Math.random() * rect.width,
+        y: Math.random() * rect.height,
+        z: Math.random(),
+      }))
     }
 
     resize()
@@ -92,7 +151,25 @@ export default function ShooterGame({ onGameOver }: Props) {
 
   const fire = useCallback(() => {
     wantsFireRef.current = true
-  }, [])
+    if (showHint) dismissHint()
+  }, [showHint, dismissHint])
+
+  const spawnBurst = (x: number, y: number, count: number, colors: string[], speed = 140) => {
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.6
+      const s = speed * (0.5 + Math.random() * 0.8)
+      particlesRef.current.push({
+        x,
+        y,
+        vx: Math.cos(angle) * s,
+        vy: Math.sin(angle) * s,
+        life: 0.35 + Math.random() * 0.25,
+        maxLife: 0.5,
+        size: 2 + Math.random() * 2.5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+      })
+    }
+  }
 
   // Main game loop
   useEffect(() => {
@@ -107,9 +184,15 @@ export default function ShooterGame({ onGameOver }: Props) {
       const dt = Math.min((now - lastTime) / 1000, 0.05)
       lastTime = now
 
+      const { w, h } = sizeRef.current
+      const enemySpeed = Math.min(
+        ENEMY_BASE_SPEED + elapsedRef.current * ENEMY_SPEED_RAMP,
+        ENEMY_MAX_SPEED
+      )
+      const difficultyFactor = enemySpeed / ENEMY_BASE_SPEED
+
       if (!overRef.current) {
         elapsedRef.current += dt
-        const { w, h } = sizeRef.current
 
         // Fire
         if (wantsFireRef.current && now - lastFireRef.current > FIRE_COOLDOWN_MS) {
@@ -121,6 +204,23 @@ export default function ShooterGame({ onGameOver }: Props) {
         }
         wantsFireRef.current = false
 
+        // Thruster particles (constant faint engine trail)
+        thrusterAccumRef.current += dt
+        if (thrusterAccumRef.current > 0.045) {
+          thrusterAccumRef.current = 0
+          const p = playerRef.current
+          particlesRef.current.push({
+            x: p.x + (Math.random() - 0.5) * 10,
+            y: p.y + PLAYER_SIZE / 2 - 2,
+            vx: (Math.random() - 0.5) * 20,
+            vy: 60 + Math.random() * 40,
+            life: 0.25,
+            maxLife: 0.25,
+            size: 2 + Math.random() * 1.5,
+            color: Math.random() > 0.5 ? '#F5C542' : '#F5825C',
+          })
+        }
+
         // Spawn enemies (interval shrinks slowly as time passes)
         const spawnEvery = Math.max(ENEMY_SPAWN_BASE_MS - elapsedRef.current * 6, 320)
         if (now - lastEnemySpawnRef.current > spawnEvery) {
@@ -128,6 +228,8 @@ export default function ShooterGame({ onGameOver }: Props) {
           enemiesRef.current.push({
             x: Math.random() * (w - ENEMY_SIZE) + ENEMY_SIZE / 2,
             y: -ENEMY_SIZE,
+            rot: 0,
+            phase: Math.random() * Math.PI * 2,
           })
         }
 
@@ -144,11 +246,6 @@ export default function ShooterGame({ onGameOver }: Props) {
           })
         }
 
-        const enemySpeed = Math.min(
-          ENEMY_BASE_SPEED + elapsedRef.current * ENEMY_SPEED_RAMP,
-          ENEMY_MAX_SPEED
-        )
-
         // Update player bullets
         bulletsRef.current = bulletsRef.current.filter((b) => {
           b.y -= BULLET_SPEED * dt
@@ -158,6 +255,7 @@ export default function ShooterGame({ onGameOver }: Props) {
         // Update enemies
         enemiesRef.current = enemiesRef.current.filter((e) => {
           e.y += enemySpeed * dt
+          e.rot += dt * 1.4
           return e.y < h + ENEMY_SIZE
         })
 
@@ -176,6 +274,9 @@ export default function ShooterGame({ onGameOver }: Props) {
           if (hit) {
             healthRef.current -= 1
             setHealth(healthRef.current)
+            shakeTimeRef.current = SHAKE_DURATION
+            flashTimeRef.current = FLASH_DURATION
+            spawnBurst(p.x, p.y, 10, ['#E8465F', '#EAF0E8'], 180)
             if (healthRef.current <= 0) {
               overRef.current = true
               onGameOver(scoreRef.current)
@@ -195,6 +296,15 @@ export default function ShooterGame({ onGameOver }: Props) {
               b.hit = true
               scoreRef.current += 1
               setScore(scoreRef.current)
+              spawnBurst(e.x, e.y, 9, KILL_COLORS, 160)
+              floatTextsRef.current.push({
+                x: e.x,
+                y: e.y,
+                life: 0.5,
+                maxLife: 0.5,
+                text: '+1',
+                color: '#8FF0C0',
+              })
               break
             }
           }
@@ -203,48 +313,175 @@ export default function ShooterGame({ onGameOver }: Props) {
         enemiesRef.current = enemiesRef.current.filter((e) => !e.hit)
       }
 
+      // Timers that keep animating briefly after game-over (shake/flash settle)
+      if (shakeTimeRef.current > 0) shakeTimeRef.current = Math.max(0, shakeTimeRef.current - dt)
+      if (flashTimeRef.current > 0) flashTimeRef.current = Math.max(0, flashTimeRef.current - dt)
+
+      // Update particles
+      particlesRef.current = particlesRef.current.filter((p) => {
+        p.x += p.vx * dt
+        p.y += p.vy * dt
+        p.vy += 220 * dt // gentle gravity
+        p.life -= dt
+        return p.life > 0
+      })
+
+      // Update floating texts
+      floatTextsRef.current = floatTextsRef.current.filter((f) => {
+        f.life -= dt
+        return f.life > 0
+      })
+
+      // Update starfield (speed scales with difficulty for a visible escalation cue)
+      for (const s of starsRef.current) {
+        s.y += (20 + s.z * 90) * difficultyFactor * dt
+        if (s.y > h) {
+          s.y = 0
+          s.x = Math.random() * w
+        }
+      }
+
       // ── Draw ──
-      const { w, h } = sizeRef.current
       ctx.clearRect(0, 0, w, h)
 
       const bgGrad = ctx.createLinearGradient(0, 0, 0, h)
-      bgGrad.addColorStop(0, '#0A0D14')
+      bgGrad.addColorStop(0, '#0A0D16')
       bgGrad.addColorStop(1, '#05060A')
       ctx.fillStyle = bgGrad
       ctx.fillRect(0, 0, w, h)
 
-      // Player ship (triangle)
+      ctx.save()
+      if (shakeTimeRef.current > 0) {
+        const mag = 7 * (shakeTimeRef.current / SHAKE_DURATION)
+        ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag)
+      }
+
+      // Starfield
+      for (const s of starsRef.current) {
+        ctx.globalAlpha = 0.25 + s.z * 0.6
+        ctx.fillStyle = '#EAF0E8'
+        const size = 0.6 + s.z * 1.6
+        ctx.fillRect(s.x, s.y, size, size)
+      }
+      ctx.globalAlpha = 1
+
+      // Particles (behind ships/bullets so bursts read as debris)
+      for (const p of particlesRef.current) {
+        ctx.globalAlpha = Math.max(p.life / p.maxLife, 0)
+        ctx.fillStyle = p.color
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.globalAlpha = 1
+
+      // Player bullets + trail
+      for (const b of bulletsRef.current) {
+        const trailGrad = ctx.createLinearGradient(b.x, b.y, b.x, b.y + BULLET_H + 14)
+        trailGrad.addColorStop(0, 'rgba(143,240,192,0.9)')
+        trailGrad.addColorStop(1, 'rgba(143,240,192,0)')
+        ctx.fillStyle = trailGrad
+        ctx.fillRect(b.x - BULLET_W / 2, b.y, BULLET_W, BULLET_H + 14)
+        ctx.fillStyle = '#EAFBF1'
+        ctx.fillRect(b.x - BULLET_W / 2, b.y, BULLET_W, BULLET_H * 0.5)
+      }
+
+      // Enemies — two-tone diamond with a breathing core, slow spin
+      for (const e of enemiesRef.current) {
+        const pulse = 1 + Math.sin(now / 180 + e.phase) * 0.08
+        ctx.save()
+        ctx.translate(e.x, e.y)
+        ctx.rotate(Math.sin(e.rot) * 0.25)
+        ctx.scale(pulse, pulse)
+        ctx.fillStyle = '#E8465F'
+        ctx.beginPath()
+        ctx.moveTo(0, -ENEMY_SIZE / 2)
+        ctx.lineTo(ENEMY_SIZE / 2, 0)
+        ctx.lineTo(0, ENEMY_SIZE / 2)
+        ctx.lineTo(-ENEMY_SIZE / 2, 0)
+        ctx.closePath()
+        ctx.fill()
+        ctx.fillStyle = '#F79CAB'
+        const inner = ENEMY_SIZE * 0.32
+        ctx.beginPath()
+        ctx.moveTo(0, -inner)
+        ctx.lineTo(inner, 0)
+        ctx.lineTo(0, inner)
+        ctx.lineTo(-inner, 0)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+      }
+
+      // Enemy bullets + trail
+      for (const eb of enemyBulletsRef.current) {
+        const trailGrad = ctx.createLinearGradient(eb.x, eb.y - 12, eb.x, eb.y)
+        trailGrad.addColorStop(0, 'rgba(245,197,66,0)')
+        trailGrad.addColorStop(1, 'rgba(245,197,66,0.85)')
+        ctx.fillStyle = trailGrad
+        ctx.fillRect(eb.x, eb.y - 12, ENEMY_BULLET_W, ENEMY_BULLET_H + 12)
+        ctx.fillStyle = '#FCE8A8'
+        ctx.fillRect(eb.x, eb.y, ENEMY_BULLET_W, ENEMY_BULLET_H * 0.4)
+      }
+
+      // Player ship — layered triangle body + wings + cockpit + thruster flame
       const p = playerRef.current
-      ctx.fillStyle = '#35D07F'
+      const flameLen = 6 + Math.sin(now / 60) * 3
+      ctx.fillStyle = '#F5C542'
       ctx.beginPath()
-      ctx.moveTo(p.x, p.y - PLAYER_SIZE / 2)
-      ctx.lineTo(p.x - PLAYER_SIZE / 2, p.y + PLAYER_SIZE / 2)
-      ctx.lineTo(p.x + PLAYER_SIZE / 2, p.y + PLAYER_SIZE / 2)
+      ctx.moveTo(p.x - 6, p.y + PLAYER_SIZE / 2 - 4)
+      ctx.lineTo(p.x + 6, p.y + PLAYER_SIZE / 2 - 4)
+      ctx.lineTo(p.x, p.y + PLAYER_SIZE / 2 - 4 + flameLen)
       ctx.closePath()
       ctx.fill()
 
-      // Player bullets
-      ctx.fillStyle = '#8FF0C0'
-      for (const b of bulletsRef.current) {
-        ctx.fillRect(b.x - BULLET_W / 2, b.y, BULLET_W, BULLET_H)
-      }
+      ctx.fillStyle = '#1C8A54'
+      ctx.beginPath()
+      ctx.moveTo(p.x - PLAYER_SIZE / 2 - 4, p.y + PLAYER_SIZE / 2)
+      ctx.lineTo(p.x - PLAYER_SIZE / 2 + 8, p.y + 2)
+      ctx.lineTo(p.x - 6, p.y + PLAYER_SIZE / 2)
+      ctx.closePath()
+      ctx.fill()
+      ctx.beginPath()
+      ctx.moveTo(p.x + PLAYER_SIZE / 2 + 4, p.y + PLAYER_SIZE / 2)
+      ctx.lineTo(p.x + PLAYER_SIZE / 2 - 8, p.y + 2)
+      ctx.lineTo(p.x + 6, p.y + PLAYER_SIZE / 2)
+      ctx.closePath()
+      ctx.fill()
 
-      // Enemies (diamonds)
-      ctx.fillStyle = '#E8465F'
-      for (const e of enemiesRef.current) {
-        ctx.beginPath()
-        ctx.moveTo(e.x, e.y - ENEMY_SIZE / 2)
-        ctx.lineTo(e.x + ENEMY_SIZE / 2, e.y)
-        ctx.lineTo(e.x, e.y + ENEMY_SIZE / 2)
-        ctx.lineTo(e.x - ENEMY_SIZE / 2, e.y)
-        ctx.closePath()
-        ctx.fill()
-      }
+      ctx.fillStyle = '#35D07F'
+      ctx.beginPath()
+      ctx.moveTo(p.x, p.y - PLAYER_SIZE / 2)
+      ctx.lineTo(p.x - PLAYER_SIZE / 2 + 3, p.y + PLAYER_SIZE / 2)
+      ctx.lineTo(p.x + PLAYER_SIZE / 2 - 3, p.y + PLAYER_SIZE / 2)
+      ctx.closePath()
+      ctx.fill()
 
-      // Enemy bullets
-      ctx.fillStyle = '#F5C542'
-      for (const eb of enemyBulletsRef.current) {
-        ctx.fillRect(eb.x, eb.y, ENEMY_BULLET_W, ENEMY_BULLET_H)
+      ctx.fillStyle = '#CFF8E3'
+      ctx.beginPath()
+      ctx.ellipse(p.x, p.y - 2, 4, 6, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // Floating "+1" texts
+      for (const f of floatTextsRef.current) {
+        const t = 1 - f.life / f.maxLife
+        ctx.globalAlpha = Math.max(f.life / f.maxLife, 0)
+        ctx.fillStyle = f.color
+        ctx.font = 'bold 15px var(--font-plex-mono), monospace'
+        ctx.textAlign = 'center'
+        ctx.fillText(f.text, f.x, f.y - t * 26)
+      }
+      ctx.globalAlpha = 1
+      ctx.textAlign = 'left'
+
+      ctx.restore()
+
+      // Hit flash overlay (drawn unshaken, full-bleed)
+      if (flashTimeRef.current > 0) {
+        ctx.globalAlpha = (flashTimeRef.current / FLASH_DURATION) * 0.32
+        ctx.fillStyle = '#E8465F'
+        ctx.fillRect(0, 0, w, h)
+        ctx.globalAlpha = 1
       }
 
       if (!overRef.current) {
@@ -259,23 +496,46 @@ export default function ShooterGame({ onGameOver }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const lowHealth = health <= 3
+
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex items-center justify-between px-4 py-2 font-mono text-sm">
-        <span className="text-cs-text1">
-          SCORE <span className="text-cs-accent">{score}</span>
+      <div className="flex items-center justify-between px-4 py-2">
+        <span className="font-mono text-sm text-cs-text2">
+          SCORE{' '}
+          <span key={score} className="inline-block animate-cs-pop font-display text-xl font-bold text-cs-accent">
+            {score}
+          </span>
         </span>
-        <span className="text-cs-text1">
-          HP <span className={health <= 3 ? 'text-cs-danger' : 'text-cs-text1'}>{health}</span>
-        </span>
+        <div
+          className={`flex gap-[3px] ${lowHealth ? 'animate-cs-danger-pulse' : ''}`}
+          aria-label={`${health} health remaining`}
+        >
+          {Array.from({ length: START_HEALTH }, (_, i) => (
+            <span
+              key={i}
+              className="h-3 w-2 rounded-sm transition-colors"
+              style={{
+                background:
+                  i < health ? (lowHealth ? '#E8465F' : '#35D07F') : 'rgba(255,255,255,.08)',
+              }}
+            />
+          ))}
+        </div>
       </div>
 
       <div
         ref={containerRef}
         className="relative mx-3 flex-1 overflow-hidden rounded-lg border border-cs-border"
+        style={
+          lowHealth
+            ? { boxShadow: 'inset 0 0 0 2px rgba(232,70,95,.5), inset 0 0 40px rgba(232,70,95,.25)' }
+            : undefined
+        }
         onPointerDown={(e) => {
           draggingRef.current = true
           handlePointerMove(e.clientX, e.clientY)
+          if (showHint) dismissHint()
         }}
         onPointerMove={(e) => {
           if (draggingRef.current) handlePointerMove(e.clientX, e.clientY)
@@ -288,6 +548,24 @@ export default function ShooterGame({ onGameOver }: Props) {
         }}
       >
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+
+        {showHint && (
+          <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/55 px-8 text-center animate-cs-in">
+            <div>
+              <p className="font-display text-lg font-bold uppercase tracking-wide text-cs-text1">
+                Drag anywhere
+              </p>
+              <p className="text-sm text-cs-text2">to fly your ship</p>
+            </div>
+            <div className="h-px w-16 bg-cs-border-strong" />
+            <div>
+              <p className="font-display text-lg font-bold uppercase tracking-wide text-cs-text1">
+                Tap Fire
+              </p>
+              <p className="text-sm text-cs-text2">to shoot enemies</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-center px-4 py-4">
@@ -296,7 +574,7 @@ export default function ShooterGame({ onGameOver }: Props) {
             e.preventDefault()
             fire()
           }}
-          className="flex h-16 w-16 select-none items-center justify-center rounded-full text-xs font-bold uppercase tracking-wide text-black active:scale-95"
+          className="flex h-16 w-16 select-none items-center justify-center rounded-full text-xs font-bold uppercase tracking-wide text-black shadow-[0_0_0_4px_rgba(53,208,127,0.12)] transition-transform active:scale-90"
           style={{ background: '#35D07F' }}
         >
           Fire
