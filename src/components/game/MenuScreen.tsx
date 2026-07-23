@@ -33,7 +33,8 @@ export default function MenuScreen({ onPlay, onLeaderboard }: Props) {
           </span>
         </h1>
         <p className="mt-3 text-sm text-cs-text2">
-          Drag to fly, tap to fire. Climb the on-chain leaderboard.
+          Drag or arrow keys to fly, tap Fire or Space to shoot. Climb the
+          on-chain leaderboard.
         </p>
       </div>
 

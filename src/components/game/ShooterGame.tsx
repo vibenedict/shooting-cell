@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { playFire, playBlast, playHit } from '@/lib/sfx'
 
 const PLAYER_SIZE = 34
+const KEY_MOVE_SPEED = 300 // px/sec, keyboard movement
 const BULLET_W = 4
 const BULLET_H = 16
 const BULLET_SPEED = 480 // px/sec
@@ -20,6 +22,8 @@ const START_HEALTH = 10
 const STAR_COUNT = 70
 const SHAKE_DURATION = 0.26
 const FLASH_DURATION = 0.16
+const MUZZLE_FLASH_DURATION = 0.08
+const RING_DURATION = 0.35
 const HINT_SEEN_KEY = 'celo-shooter-hint-seen'
 
 const KILL_COLORS = ['#E8465F', '#F5825C', '#F5C542']
@@ -61,6 +65,15 @@ interface Star {
   z: number // 0..1 depth: bigger = closer/faster/brighter
 }
 
+interface Ring {
+  x: number
+  y: number
+  life: number
+  maxLife: number
+  maxRadius: number
+  color: string
+}
+
 interface Props {
   onGameOver: (score: number) => void
 }
@@ -77,8 +90,12 @@ export default function ShooterGame({ onGameOver }: Props) {
   const particlesRef = useRef<Particle[]>([])
   const floatTextsRef = useRef<FloatText[]>([])
   const starsRef = useRef<Star[]>([])
+  const ringsRef = useRef<Ring[]>([])
   const shakeTimeRef = useRef(0)
   const flashTimeRef = useRef(0)
+  const muzzleFlashRef = useRef(0)
+  const bankRef = useRef(0)
+  const prevPlayerXRef = useRef(180)
   const thrusterAccumRef = useRef(0)
   const lastFireRef = useRef(0)
   const lastEnemySpawnRef = useRef(0)
@@ -90,6 +107,7 @@ export default function ShooterGame({ onGameOver }: Props) {
   const rafRef = useRef<number>()
   const overRef = useRef(false)
   const wantsFireRef = useRef(false)
+  const keysRef = useRef<Set<string>>(new Set())
 
   const [score, setScore] = useState(0)
   const [health, setHealth] = useState(START_HEALTH)
@@ -154,6 +172,30 @@ export default function ShooterGame({ onGameOver }: Props) {
     if (showHint) dismissHint()
   }, [showHint, dismissHint])
 
+  // Keyboard controls: arrow keys / WASD to move, Space or X to fire.
+  useEffect(() => {
+    const moveKeys = new Set([
+      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+      'a', 'A', 'd', 'D', 'w', 'W', 's', 'S',
+    ])
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (moveKeys.has(e.key) || e.key === ' ') e.preventDefault()
+      keysRef.current.add(e.key)
+      if (e.key === ' ' || e.key === 'x' || e.key === 'X') fire()
+    }
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysRef.current.delete(e.key)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [fire])
+
   const spawnBurst = (x: number, y: number, count: number, colors: string[], speed = 140) => {
     for (let i = 0; i < count; i++) {
       const angle = (Math.PI * 2 * i) / count + Math.random() * 0.6
@@ -169,6 +211,10 @@ export default function ShooterGame({ onGameOver }: Props) {
         color: colors[Math.floor(Math.random() * colors.length)],
       })
     }
+  }
+
+  const spawnRing = (x: number, y: number, color: string, maxRadius = 42) => {
+    ringsRef.current.push({ x, y, life: RING_DURATION, maxLife: RING_DURATION, maxRadius, color })
   }
 
   // Main game loop
@@ -194,6 +240,36 @@ export default function ShooterGame({ onGameOver }: Props) {
       if (!overRef.current) {
         elapsedRef.current += dt
 
+        // Keyboard movement (arrow keys / WASD), combined with drag
+        {
+          const keys = keysRef.current
+          let kdx = 0
+          let kdy = 0
+          if (keys.has('ArrowLeft') || keys.has('a') || keys.has('A')) kdx -= 1
+          if (keys.has('ArrowRight') || keys.has('d') || keys.has('D')) kdx += 1
+          if (keys.has('ArrowUp') || keys.has('w') || keys.has('W')) kdy -= 1
+          if (keys.has('ArrowDown') || keys.has('s') || keys.has('S')) kdy += 1
+          if (kdx !== 0 || kdy !== 0) {
+            if (kdx !== 0 && kdy !== 0) {
+              kdx *= Math.SQRT1_2
+              kdy *= Math.SQRT1_2
+            }
+            const half = PLAYER_SIZE / 2
+            playerRef.current = {
+              x: Math.min(Math.max(playerRef.current.x + kdx * KEY_MOVE_SPEED * dt, half), w - half),
+              y: Math.min(Math.max(playerRef.current.y + kdy * KEY_MOVE_SPEED * dt, half), h - half),
+            }
+          }
+        }
+
+        // Ship banking — tilt toward the direction of horizontal travel
+        {
+          const velX = (playerRef.current.x - prevPlayerXRef.current) / Math.max(dt, 0.001)
+          prevPlayerXRef.current = playerRef.current.x
+          const targetBank = Math.max(-0.5, Math.min(0.5, velX * 0.0045))
+          bankRef.current += (targetBank - bankRef.current) * Math.min(1, dt * 10)
+        }
+
         // Fire
         if (wantsFireRef.current && now - lastFireRef.current > FIRE_COOLDOWN_MS) {
           lastFireRef.current = now
@@ -201,6 +277,8 @@ export default function ShooterGame({ onGameOver }: Props) {
             x: playerRef.current.x,
             y: playerRef.current.y - PLAYER_SIZE / 2,
           })
+          muzzleFlashRef.current = MUZZLE_FLASH_DURATION
+          playFire()
         }
         wantsFireRef.current = false
 
@@ -277,6 +355,8 @@ export default function ShooterGame({ onGameOver }: Props) {
             shakeTimeRef.current = SHAKE_DURATION
             flashTimeRef.current = FLASH_DURATION
             spawnBurst(p.x, p.y, 10, ['#E8465F', '#EAF0E8'], 180)
+            spawnRing(p.x, p.y, '#E8465F', 50)
+            playHit()
             if (healthRef.current <= 0) {
               overRef.current = true
               onGameOver(scoreRef.current)
@@ -297,6 +377,8 @@ export default function ShooterGame({ onGameOver }: Props) {
               scoreRef.current += 1
               setScore(scoreRef.current)
               spawnBurst(e.x, e.y, 9, KILL_COLORS, 160)
+              spawnRing(e.x, e.y, '#F5C542', 44)
+              playBlast()
               floatTextsRef.current.push({
                 x: e.x,
                 y: e.y,
@@ -316,6 +398,13 @@ export default function ShooterGame({ onGameOver }: Props) {
       // Timers that keep animating briefly after game-over (shake/flash settle)
       if (shakeTimeRef.current > 0) shakeTimeRef.current = Math.max(0, shakeTimeRef.current - dt)
       if (flashTimeRef.current > 0) flashTimeRef.current = Math.max(0, flashTimeRef.current - dt)
+      if (muzzleFlashRef.current > 0) muzzleFlashRef.current = Math.max(0, muzzleFlashRef.current - dt)
+
+      // Update blast rings
+      ringsRef.current = ringsRef.current.filter((r) => {
+        r.life -= dt
+        return r.life > 0
+      })
 
       // Update particles
       particlesRef.current = particlesRef.current.filter((p) => {
@@ -375,15 +464,29 @@ export default function ShooterGame({ onGameOver }: Props) {
       }
       ctx.globalAlpha = 1
 
-      // Player bullets + trail
+      // Blast rings (kill / hit explosions)
+      for (const r of ringsRef.current) {
+        const t = 1 - r.life / r.maxLife
+        ctx.globalAlpha = Math.max(1 - t, 0) * 0.8
+        ctx.strokeStyle = r.color
+        ctx.lineWidth = 3 * (1 - t) + 0.5
+        ctx.beginPath()
+        ctx.arc(r.x, r.y, r.maxRadius * t, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = 1
+
+      // Player bullets + trail — a subtle pulse keeps them feeling energized
+      const bulletPulse = 1 + Math.sin(now / 40) * 0.15
       for (const b of bulletsRef.current) {
+        const bw = BULLET_W * bulletPulse
         const trailGrad = ctx.createLinearGradient(b.x, b.y, b.x, b.y + BULLET_H + 14)
         trailGrad.addColorStop(0, 'rgba(143,240,192,0.9)')
         trailGrad.addColorStop(1, 'rgba(143,240,192,0)')
         ctx.fillStyle = trailGrad
-        ctx.fillRect(b.x - BULLET_W / 2, b.y, BULLET_W, BULLET_H + 14)
+        ctx.fillRect(b.x - bw / 2, b.y, bw, BULLET_H + 14)
         ctx.fillStyle = '#EAFBF1'
-        ctx.fillRect(b.x - BULLET_W / 2, b.y, BULLET_W, BULLET_H * 0.5)
+        ctx.fillRect(b.x - bw / 2, b.y, bw, BULLET_H * 0.5)
       }
 
       // Enemies — two-tone diamond with a breathing core, slow spin
@@ -424,43 +527,74 @@ export default function ShooterGame({ onGameOver }: Props) {
         ctx.fillRect(eb.x, eb.y, ENEMY_BULLET_W, ENEMY_BULLET_H * 0.4)
       }
 
-      // Player ship — layered triangle body + wings + cockpit + thruster flame
+      // Player ship — layered triangle body + wings + gun barrels + cockpit +
+      // thruster flame, banked toward the direction of horizontal travel
       const p = playerRef.current
       const flameLen = 6 + Math.sin(now / 60) * 3
+      ctx.save()
+      ctx.translate(p.x, p.y)
+      ctx.rotate(bankRef.current)
+
+      // Thruster flame
       ctx.fillStyle = '#F5C542'
       ctx.beginPath()
-      ctx.moveTo(p.x - 6, p.y + PLAYER_SIZE / 2 - 4)
-      ctx.lineTo(p.x + 6, p.y + PLAYER_SIZE / 2 - 4)
-      ctx.lineTo(p.x, p.y + PLAYER_SIZE / 2 - 4 + flameLen)
+      ctx.moveTo(-6, PLAYER_SIZE / 2 - 4)
+      ctx.lineTo(6, PLAYER_SIZE / 2 - 4)
+      ctx.lineTo(0, PLAYER_SIZE / 2 - 4 + flameLen)
       ctx.closePath()
       ctx.fill()
 
+      // Wings
       ctx.fillStyle = '#1C8A54'
       ctx.beginPath()
-      ctx.moveTo(p.x - PLAYER_SIZE / 2 - 4, p.y + PLAYER_SIZE / 2)
-      ctx.lineTo(p.x - PLAYER_SIZE / 2 + 8, p.y + 2)
-      ctx.lineTo(p.x - 6, p.y + PLAYER_SIZE / 2)
+      ctx.moveTo(-PLAYER_SIZE / 2 - 4, PLAYER_SIZE / 2)
+      ctx.lineTo(-PLAYER_SIZE / 2 + 8, 2)
+      ctx.lineTo(-6, PLAYER_SIZE / 2)
       ctx.closePath()
       ctx.fill()
       ctx.beginPath()
-      ctx.moveTo(p.x + PLAYER_SIZE / 2 + 4, p.y + PLAYER_SIZE / 2)
-      ctx.lineTo(p.x + PLAYER_SIZE / 2 - 8, p.y + 2)
-      ctx.lineTo(p.x + 6, p.y + PLAYER_SIZE / 2)
+      ctx.moveTo(PLAYER_SIZE / 2 + 4, PLAYER_SIZE / 2)
+      ctx.lineTo(PLAYER_SIZE / 2 - 8, 2)
+      ctx.lineTo(6, PLAYER_SIZE / 2)
       ctx.closePath()
       ctx.fill()
 
+      // Gun barrels mounted on the wingtips
+      const barrelY = 4
+      const barrelLen = 9
+      ctx.fillStyle = '#2A2E37'
+      ctx.fillRect(-PLAYER_SIZE / 2 + 5, barrelY - barrelLen, 3, barrelLen)
+      ctx.fillRect(PLAYER_SIZE / 2 - 8, barrelY - barrelLen, 3, barrelLen)
+
+      // Body
       ctx.fillStyle = '#35D07F'
       ctx.beginPath()
-      ctx.moveTo(p.x, p.y - PLAYER_SIZE / 2)
-      ctx.lineTo(p.x - PLAYER_SIZE / 2 + 3, p.y + PLAYER_SIZE / 2)
-      ctx.lineTo(p.x + PLAYER_SIZE / 2 - 3, p.y + PLAYER_SIZE / 2)
+      ctx.moveTo(0, -PLAYER_SIZE / 2)
+      ctx.lineTo(-PLAYER_SIZE / 2 + 3, PLAYER_SIZE / 2)
+      ctx.lineTo(PLAYER_SIZE / 2 - 3, PLAYER_SIZE / 2)
       ctx.closePath()
       ctx.fill()
 
+      // Cockpit
       ctx.fillStyle = '#CFF8E3'
       ctx.beginPath()
-      ctx.ellipse(p.x, p.y - 2, 4, 6, 0, 0, Math.PI * 2)
+      ctx.ellipse(0, -2, 4, 6, 0, 0, Math.PI * 2)
       ctx.fill()
+
+      // Muzzle flash at each gun barrel tip
+      if (muzzleFlashRef.current > 0) {
+        const ft = muzzleFlashRef.current / MUZZLE_FLASH_DURATION
+        ctx.globalAlpha = ft
+        ctx.fillStyle = '#FFF6D8'
+        for (const gx of [-PLAYER_SIZE / 2 + 6.5, PLAYER_SIZE / 2 - 6.5]) {
+          ctx.beginPath()
+          ctx.arc(gx, barrelY - barrelLen, 4 * ft + 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.globalAlpha = 1
+      }
+
+      ctx.restore()
 
       // Floating "+1" texts
       for (const f of floatTextsRef.current) {
@@ -553,14 +687,14 @@ export default function ShooterGame({ onGameOver }: Props) {
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/55 px-8 text-center animate-cs-in">
             <div>
               <p className="font-display text-lg font-bold uppercase tracking-wide text-cs-text1">
-                Drag anywhere
+                Drag or arrow keys
               </p>
               <p className="text-sm text-cs-text2">to fly your ship</p>
             </div>
             <div className="h-px w-16 bg-cs-border-strong" />
             <div>
               <p className="font-display text-lg font-bold uppercase tracking-wide text-cs-text1">
-                Tap Fire
+                Tap Fire or Space
               </p>
               <p className="text-sm text-cs-text2">to shoot enemies</p>
             </div>

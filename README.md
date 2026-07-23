@@ -1,6 +1,6 @@
 # Celo Shooter 🚀
 
-A pocket arcade shooter for [MiniPay](https://www.opera.com/products/minipay) (Opera's in-wallet browser on Celo). Drag to fly, tap to fire, dodge falling bullets, and climb an on-chain leaderboard.
+A pocket arcade shooter for [MiniPay](https://www.opera.com/products/minipay) (Opera's in-wallet browser on Celo). Drag or use arrow keys to fly, tap Fire or press Space to shoot, dodge falling bullets, and climb an on-chain leaderboard.
 
 Rebuilt from a Python/pygame prototype ([source](https://github.com/coding-arnav66/Arnav-Python-Projects2/tree/9f72e974aeba8c1e73ae81a4fc32a81705de5e63/shooter.py)) as a mobile-first HTML5 Canvas game: mouse-follow becomes touch-drag, the keyboard-fire becomes a tap button.
 
