@@ -51,6 +51,26 @@ export default function LeaderboardScreen({ onBack }: Props) {
         </p>
       )}
 
+      {contractConfigured && entries.length > 0 && (
+        <div
+          key={entries[0].player}
+          className="relative cs-card px-4 py-4 text-center animate-cs-in"
+          style={{ borderColor: 'rgba(245,197,66,0.5)', background: 'rgba(245,197,66,0.08)' }}
+        >
+          <div className="flex items-center justify-center gap-1.5 text-[10px] uppercase tracking-widest text-cs-gold">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cs-gold" />
+            Top player · live
+          </div>
+          <p className="mt-1 font-display text-lg font-bold text-cs-text1">
+            {truncateAddress(entries[0].player)}
+            {address && entries[0].player.toLowerCase() === address.toLowerCase() && (
+              <span className="ml-1 text-cs-accent">(you)</span>
+            )}
+          </p>
+          <p className="font-mono text-sm text-cs-gold">{entries[0].score.toString()} pts</p>
+        </div>
+      )}
+
       <div className="relative flex-1 space-y-2 overflow-y-auto">
         {entries.map((entry, i) => {
           const isMe = address && entry.player.toLowerCase() === address.toLowerCase()

@@ -1,6 +1,12 @@
 'use client'
 
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import {
+  useAccount,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+  useWatchContractEvent,
+} from 'wagmi'
 import { celo } from 'wagmi/chains'
 import { SHOOTER_SCORE_ABI, SHOOTER_SCORE_ADDRESS } from '@/contracts/abi'
 import type { LeaderboardEntry } from '@/types'
@@ -10,12 +16,27 @@ const contract = {
   abi: SHOOTER_SCORE_ABI,
 } as const
 
+const CONTRACT_ENABLED = SHOOTER_SCORE_ADDRESS !== '0x0000000000000000000000000000000000000000'
+
+/**
+ * Live leaderboard: refetches immediately whenever a `ScoreSubmitted` event
+ * is seen on-chain, with a short polling interval as a fallback so it never
+ * goes stale even if a log is missed.
+ */
 export function useLeaderboard() {
   const { data, isLoading, refetch } = useReadContract({
     ...contract,
     functionName: 'getLeaderboard',
     chainId: celo.id,
-    query: { enabled: SHOOTER_SCORE_ADDRESS !== '0x0000000000000000000000000000000000000000' },
+    query: { enabled: CONTRACT_ENABLED, refetchInterval: 5_000 },
+  })
+
+  useWatchContractEvent({
+    ...contract,
+    eventName: 'ScoreSubmitted',
+    chainId: celo.id,
+    enabled: CONTRACT_ENABLED,
+    onLogs: () => refetch(),
   })
 
   const entries: LeaderboardEntry[] = ((data as readonly { player: `0x${string}`; score: bigint }[]) ?? [])
