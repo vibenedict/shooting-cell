@@ -74,6 +74,8 @@ forge test              # compiles + runs the ShooterScore test suite
 
 ### Deploy to Alfajores testnet
 
+> Full step-by-step (deployer setup, funding, connecting a real wallet, funding the session key, and verifying transactions on the explorer) is in [`DEPLOY_ALFAJORES.md`](DEPLOY_ALFAJORES.md). Quick version:
+
 ```bash
 cast wallet import shooter-deployer --interactive
 # fund the deployer with test CELO: https://faucet.celo.org/alfajores
